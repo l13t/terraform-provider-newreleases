@@ -1,0 +1,50 @@
+name: Acceptance (live API)
+
+# Runs the acceptance tests against the real newreleases.io API. Triggered
+# manually only: the tests create and delete real projects
+# (github/golang/go, github/golang/tools) and tags in the account behind the
+# NEWRELEASES_API_KEY secret, and one run spends about 450 of its 1000 hourly
+# rate-limit units. Use a dedicated account that does not track those
+# projects.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cli:
+        description: CLI to run the tests with
+        type: choice
+        options: [terraform, tofu]
+        default: terraform
+
+permissions:
+  contents: read
+
+jobs:
+  testacc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: acceptance-live
+    # Runs share the same account and projects; never let two overlap.
+    concurrency:
+      group: acceptance-live
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: arduino/setup-task@v3
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - if: inputs.cli == 'terraform'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+      - if: inputs.cli == 'tofu'
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_wrapper: false
+      - run: task testacc:live TF_CLI=${{ inputs.cli }}
+        env:
+          NEWRELEASES_API_KEY: ${{ secrets.NEWRELEASES_API_KEY }}

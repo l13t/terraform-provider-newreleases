@@ -1,0 +1,71 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - dupword
+    - err113
+    - errcheck
+    - errorlint
+    - funcorder
+    - goconst
+    - gocritic
+    - gocyclo
+    - godox
+    - goheader
+    - govet
+    - ineffassign
+    - loggercheck
+    - misspell
+    - staticcheck
+    - unused
+    - whitespace
+  settings:
+    goconst:
+      ignore-tests: true
+      # snake_case strings are Terraform attribute names in schema maps.
+      ignore-string-values:
+        - "^[a-z][a-z0-9_]*$"
+    dogsled:
+      max-blank-identifiers: 3
+    gocyclo:
+      min-complexity: 15
+    godox:
+      keywords:
+        - NOTE
+        - OPTIMIZE
+        - HACK
+        - TODO
+        - BUG
+        - FIXME
+    whitespace:
+      multi-if: true
+      multi-func: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Test assertions build ad-hoc failure messages.
+      - path: _test\.go
+        linters:
+          - err113
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

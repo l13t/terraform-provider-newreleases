@@ -1,0 +1,7 @@
+/terraform-provider-newreleases
+dist/
+.terraform*
+*.tfstate*
+/docs/.tfpluginschema*
+coverage.out
+.task/

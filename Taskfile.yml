@@ -1,0 +1,131 @@
+---
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  BINARY_NAME: terraform-provider-newreleases
+  NAMESPACE: l13t
+  TYPE: newreleases
+  DEV_VERSION: 0.0.0-dev
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  GOOS:
+    sh: go env GOOS
+  GOARCH:
+    sh: go env GOARCH
+  # CLI used by acceptance tests: terraform (default) or tofu,
+  # e.g. `task testacc TF_CLI=tofu`.
+  TF_CLI: terraform
+  TF_PROVIDER_HOST: '{{if eq .TF_CLI "tofu"}}registry.opentofu.org{{else}}registry.terraform.io{{end}}'
+
+env:
+  CGO_ENABLED: 0
+
+tasks:
+  default:
+    desc: Display available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the provider binary
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BINARY_NAME}}"
+    cmds:
+      - go build -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BINARY_NAME}}
+
+  install:
+    desc: Build and install into the local CLI plugin directory
+    deps: [build]
+    vars:
+      PLUGIN_DIR: '{{.HOME}}/.terraform.d/plugins/registry.terraform.io/{{.NAMESPACE}}/{{.TYPE}}/{{.DEV_VERSION}}/{{.GOOS}}_{{.GOARCH}}'
+    cmds:
+      - mkdir -p {{.PLUGIN_DIR}}
+      - cp {{.BINARY_NAME}} {{.PLUGIN_DIR}}/
+      - echo "Installed to {{.PLUGIN_DIR}}"
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -s -w .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
+
+  test:
+    desc: Run unit tests (no API key required)
+    cmds:
+      - go test ./... -count=1
+
+  testacc:
+    desc: Run acceptance tests against the in-memory fake API (no API key, safe for CI); TF_CLI=tofu for OpenTofu
+    preconditions:
+      - sh: command -v {{.TF_CLI}}
+        msg: "{{.TF_CLI}} not found in PATH"
+    env:
+      TF_ACC: 1
+      NEWRELEASES_FAKE: 1
+      TF_ACC_TERRAFORM_PATH:
+        sh: command -v {{.TF_CLI}}
+      TF_ACC_PROVIDER_HOST: "{{.TF_PROVIDER_HOST}}"
+    cmds:
+      - go test ./internal/provider/... -v -count=1 -timeout 30m
+
+  testacc:live:
+    desc: Run acceptance tests against the real API (creates and deletes real projects); TF_CLI=tofu for OpenTofu
+    preconditions:
+      - sh: '[ -n "$NEWRELEASES_API_KEY" ]'
+        msg: NEWRELEASES_API_KEY must be set
+      - sh: command -v {{.TF_CLI}}
+        msg: "{{.TF_CLI}} not found in PATH"
+    env:
+      TF_ACC: 1
+      NEWRELEASES_FAKE: 0
+      TF_ACC_TERRAFORM_PATH:
+        sh: command -v {{.TF_CLI}}
+      TF_ACC_PROVIDER_HOST: "{{.TF_PROVIDER_HOST}}"
+    cmds:
+      - go test ./internal/provider/... -v -count=1 -timeout 30m
+
+  docs:
+    desc: Regenerate docs/ with tfplugindocs
+    cmds:
+      - go generate ./...
+
+  docs:check:
+    desc: Fail if docs/ is out of date
+    deps: [docs]
+    cmds:
+      - git diff --exit-code -- docs/
+
+  check:
+    desc: Run fmt, vet, lint and unit tests
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+
+  release:snapshot:
+    desc: Build a local goreleaser snapshot without publishing
+    cmds:
+      - go run github.com/goreleaser/goreleaser/v2@v2.18.2 release --snapshot --clean --skip=sign
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf dist
+      - rm -f {{.BINARY_NAME}} coverage.out

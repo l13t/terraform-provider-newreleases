@@ -1,0 +1,88 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Acceptance tests run against the in-memory fake API (internal/fakeapi) on
+# every supported Terraform and OpenTofu version. The run against the real
+# API needs a secret key and mutates the account, so it lives in the manually
+# triggered acceptance-live.yml workflow.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: arduino/setup-task@v3
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: go mod download
+      - run: task build
+      - run: task vet
+      - run: task lint
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: arduino/setup-task@v3
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # tfplugindocs runs `terraform providers schema -json`.
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+      - run: task docs:check
+
+  test:
+    name: test (${{ matrix.cli }} ${{ matrix.version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cli: terraform
+            version: "1.9.*"
+          - cli: terraform
+            version: "1.16.*"
+          - cli: tofu
+            version: "1.10.*"
+          - cli: tofu
+            version: "1.12.*"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: arduino/setup-task@v3
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - if: matrix.cli == 'terraform'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ matrix.version }}
+          terraform_wrapper: false
+      - if: matrix.cli == 'tofu'
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: ${{ matrix.version }}
+          tofu_wrapper: false
+      - run: task test
+      - run: task testacc TF_CLI=${{ matrix.cli }}
